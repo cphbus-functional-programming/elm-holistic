@@ -2,6 +2,7 @@
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
+import Http
 
 main =
   Html.program
@@ -20,6 +21,7 @@ type alias Member =
 type alias Model =
   { current : Maybe Member
   , allMembers : List Member
+  , webresult : String
   }
 
 type Msg
@@ -27,17 +29,21 @@ type Msg
   | EmailChanged String
   | AddMemberClicked
   | SaveMemberClicked
+  | GetWebResult
+  | MemberListArrived (Result Http.Error String)
 
 init : (Model, Cmd Msg)
-init = ( { current = Nothing, allMembers = []} , Cmd.none)
+init = ( { current = Nothing, allMembers = [], webresult = "None yet"} , Cmd.none)
 -- init = (Member 7 "Anders And" "aa@andeby.quack", Cmd.none)
 -- init = ({ id = 7, name = "Anders And", email = "aa@andeby.quack"}, Cmd.none)
 
 view : Model -> Html Msg
 view model =
   div []
-    [ currentMemberForm model.current
+    [ text <| "Web result was: "++model.webresult
+    , currentMemberForm model.current
     , button [ onClick AddMemberClicked ] [ text "Add a member" ]
+    , button [ onClick GetWebResult ] [ text "Call web" ]
     , hr [] []
     , div [] <| List.map viewMember model.allMembers
     ]
@@ -63,6 +69,9 @@ currentMemberForm memberOrNot =
 update : Msg -> Model -> (Model, Cmd Msg)
 update message model =
     case message of
+      MemberListArrived (Err _) -> (model, Cmd.none)
+      MemberListArrived (Ok payload) -> ({ model | webresult = payload }, Cmd.none )
+      GetWebResult -> (model, getMemberList)
       AddMemberClicked ->
         ({ model | current = Just {id = (List.length model.allMembers) + 1, name = "", email = "" }}, Cmd.none)
       NameChanged newName ->
@@ -83,3 +92,10 @@ update message model =
 
 subscriptions : Model -> Sub Msg
 subscriptions model = Sub.none
+
+getMemberList : Cmd Msg
+getMemberList =
+  let
+    url = "http://localhost:8080/member"
+  in
+    Http.send MemberListArrived (Http.getString url)
