@@ -4,6 +4,8 @@ import Html.Attributes exposing (..)
 import Html.Events exposing (..)
 import Http
 import Json.Decode as Decode exposing (Decoder)
+import WebSocket
+import Time exposing (Time, second)
 
 main : Program Never Model Msg
 main =
@@ -13,6 +15,9 @@ main =
     , update = update
     , subscriptions = subscriptions
     }
+
+echoServer : String
+echoServer = "wss://echo.websocket.org"
 
 type alias Member =
   { id : Int
@@ -36,6 +41,9 @@ type Msg
   | MemberListStringArrived (Result Http.Error String)
   | MemberArrived (Result Http.Error Member)
   | MemberListArrived (Result Http.Error (List Member))
+  | EchoMessageArrived String
+  | SendEchoMessage
+  | Tick Time
 
 init : (Model, Cmd Msg)
 init = ( { current = Nothing, allMembers = [], webresult = "None yet"} , Cmd.none)
@@ -50,6 +58,7 @@ view model =
     , button [ onClick AddMemberClicked ] [ text "Add a member" ]
     , button [ onClick GetWebResult ] [ text "Get single member from web" ]
     , button [ onClick GetAllMembers ] [ text "Get all members from web" ]
+    , button [ onClick SendEchoMessage ] [ text "Send status to echo server" ]
     , hr [] []
     , div [] <| List.map viewMember model.allMembers
     ]
@@ -71,10 +80,20 @@ currentMemberForm memberOrNot =
         , button [ onClick SaveMemberClicked ] [ text "Save" ]
         ]
 
+modelStatus : Model -> String
+modelStatus model =
+  case model.current of
+    Just member -> "Selected member is "++member.name
+    Nothing -> "No members are selected"
 
 update : Msg -> Model -> (Model, Cmd Msg)
 update message model =
     case message of
+      Tick time -> ({ model | webresult = "Time: "++(toString time)}, Cmd.none)
+
+      EchoMessageArrived text -> ({ model | webresult = text }, Cmd.none )
+      SendEchoMessage -> (model, WebSocket.send echoServer (modelStatus model))
+
       MemberArrived (Err _) -> (model, Cmd.none)
       MemberArrived (Ok member) -> ({ model | current = Just member }, Cmd.none)
 
@@ -83,6 +102,7 @@ update message model =
 
       MemberListStringArrived (Err _) -> (model, Cmd.none)
       MemberListStringArrived (Ok payload) -> ({ model | webresult = payload }, Cmd.none )
+
       -- GetWebResult -> (model, getMemberList)
       GetWebResult -> (model, getMember 2)
       GetAllMembers -> (model, getMemberList)
@@ -105,7 +125,12 @@ update message model =
             ({ model | allMembers = (model.allMembers ++ [member]), current = Nothing }, Cmd.none)
 
 subscriptions : Model -> Sub Msg
-subscriptions model = Sub.none
+subscriptions model =
+  case model.current of
+    Just _ ->
+      WebSocket.listen echoServer EchoMessageArrived
+    Nothing ->
+      Time.every second Tick
 
 getMemberListOld : Cmd Msg
 getMemberListOld =
